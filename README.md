@@ -23,6 +23,19 @@ This plugin is designed to help businesses collect private feedback and boost th
 
 ---
 
+## High Traffic & Performance Optimization
+
+This plugin is specifically optimized to handle sudden traffic spikes and high concurrency (e.g., during live events, student surveys, or launch campaigns) with the following architectural choices:
+
+*   **Conditional Asset Loading**: Stylesheets and JavaScript assets are *only* enqueued on pages/posts containing the `[sff_form]` shortcode. This keeps other site pages lightweight and free of unnecessary code.
+*   **Custom Database Tables**: Storing responses in a dedicated custom table (`wp_sff_responses`) rather than WP custom post types (`wp_posts` and `wp_postmeta`) avoids slow, nested joins and database locking under high-concurrency write operations.
+*   **Asynchronous AJAX Handling**: Submissions utilize the modern Fetch API, keeping requests fast, responsive, and light on PHP worker processes.
+*   **Soft Nonce Validation**: Nonce validation is handled gracefully to ensure cached pages or expired nonces during high-traffic windows do not block real submissions or result in critical crashes.
+*   **Fail-Safe Graceful Degradation**: If the database writes fail under extreme DB load spikes, the frontend is built to fail silently and still guide the customer to their redirect URL or thank-you message instead of presenting a jarring system error.
+*   **Lightweight Honeypot Spam Protection**: The honeypot field filters out spam bots locally, avoiding expensive, slow third-party API calls (like Google reCAPTCHA) that add latency and degrade server response times during peak traffic.
+
+---
+
 ## Installation Guide
 
 1.  **Download the Plugin**: Obtain the plugin folder or ZIP archive.
