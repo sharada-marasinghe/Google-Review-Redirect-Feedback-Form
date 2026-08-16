@@ -18,6 +18,7 @@ This plugin is designed to help businesses collect private feedback and boost th
 *   **Admin Dashboard**:
     *   **Questions Manager**: Manage and order fields easily.
     *   **Responses Viewer**: View up to 200 of the latest feedback submissions directly in the WordPress dashboard.
+    *   **Delete Responses**: Delete individual responses one by one, bulk delete selected responses, or permanently delete all responses with confirmation safety checks.
     *   **CSV Export**: Export all feedback history to a clean, UTF-8 encoded CSV file (compatible with Excel and other spreadsheet editors).
 *   **Clean Styling**: Minimalist, neutral, and responsive front-end design that blends seamlessly into any theme.
 
@@ -69,10 +70,13 @@ Display the form on any page, post, or widget using the following shortcode:
 [sff_form]
 ```
 
-### Step 4: View & Export Responses
+### Step 4: View, Manage & Export Responses
 1. Go to **Feedback Form > Responses** to view recent feedback submissions.
-2. View the dates, overall ratings, and all question-answer pairs.
-3. Click the **Export All to CSV** button to download a spreadsheet containing all submissions.
+2. View dates, overall ratings, and question-answer pairs.
+3. **Delete single response**: Click the red **Delete** button next to any response to remove it.
+4. **Bulk delete responses**: Select the checkboxes next to items you want to remove, choose **Delete** from the **Bulk Actions** dropdown, and click **Apply**.
+5. **Delete all responses**: Click the **🗑 Delete All Responses** button at the top to clear all feedback submissions at once.
+6. Click the **⬇ Export All to CSV** button to download a complete spreadsheet of all submissions.
 
 ---
 

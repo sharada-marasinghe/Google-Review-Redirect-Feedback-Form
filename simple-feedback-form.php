@@ -3,7 +3,7 @@
  * Plugin Name: Google Review Redirect Feedback Form
  * Plugin URI: https://example.com
  * Description: A WordPress plugin to build customizable feedback forms. Boost your business reputation by conditionally redirecting happy customers to your Google Review page while saving all submissions to your database. Use shortcode [sff_form] to display the form.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: sharada-marasinghe
  * License: MIT
  * Text Domain: simple-feedback-form
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // No direct access.
 }
 
-define( 'SFF_VERSION', '1.1.0' );
+define( 'SFF_VERSION', '1.2.0' );
 define( 'SFF_DB_VERSION', '1.0' );
 
 /* =========================================================
@@ -210,12 +210,47 @@ function sff_render_settings_page() {
 }
 
 /* =========================================================
- *  RESPONSES PAGE  (+ CSV export button)
+ *  RESPONSES PAGE  (+ Delete Actions & CSV export button)
  * ========================================================= */
 function sff_render_responses_page() {
     if ( ! current_user_can( 'manage_options' ) ) return;
     global $wpdb;
     $table = $wpdb->prefix . 'sff_responses';
+
+    // 1. Handle single delete action
+    if ( isset( $_GET['delete_response'] ) && check_admin_referer( 'sff_delete_response_' . $_GET['delete_response'] ) ) {
+        $response_id = (int) $_GET['delete_response'];
+        $wpdb->delete( $table, array( 'id' => $response_id ) );
+        echo '<div class="notice notice-success is-dismissible"><p>Feedback response deleted successfully.</p></div>';
+    }
+
+    // 2. Handle delete all action
+    if ( isset( $_POST['sff_delete_all_responses'] ) && check_admin_referer( 'sff_delete_all_action', 'sff_delete_all_nonce' ) ) {
+        $result = $wpdb->query( "TRUNCATE TABLE $table" );
+        if ( false === $result ) {
+            $wpdb->query( "DELETE FROM $table" );
+        }
+        echo '<div class="notice notice-success is-dismissible"><p>All feedback responses have been permanently deleted.</p></div>';
+    }
+
+    // 3. Handle bulk delete action
+    if ( isset( $_POST['sff_bulk_action'] ) && $_POST['sff_bulk_action'] === 'delete' && check_admin_referer( 'sff_bulk_responses_action', 'sff_bulk_nonce' ) ) {
+        if ( ! empty( $_POST['response_ids'] ) && is_array( $_POST['response_ids'] ) ) {
+            $ids = array_map( 'intval', $_POST['response_ids'] );
+            $ids = array_filter( $ids );
+            if ( ! empty( $ids ) ) {
+                $placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+                $deleted = $wpdb->query( $wpdb->prepare( "DELETE FROM $table WHERE id IN ($placeholders)", $ids ) );
+                if ( $deleted ) {
+                    /* translators: %d: number of deleted responses */
+                    echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( sprintf( _n( '%d feedback response deleted successfully.', '%d feedback responses deleted successfully.', $deleted, 'simple-feedback-form' ), $deleted ) ) . '</p></div>';
+                }
+            }
+        } else {
+            echo '<div class="notice notice-warning is-dismissible"><p>No feedback responses were selected for deletion.</p></div>';
+        }
+    }
+
     $total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM $table" );
     $rows  = $wpdb->get_results( "SELECT * FROM $table ORDER BY submitted_at DESC LIMIT 200" );
 
@@ -223,29 +258,114 @@ function sff_render_responses_page() {
     ?>
     <div class="wrap">
         <h1>Feedback Responses (<?php echo $total; ?> total)</h1>
-        <p><a href="<?php echo esc_url( $export_url ); ?>" class="button button-primary">⬇ Export All to CSV</a></p>
-        <p class="description">Showing latest 200 below. The CSV export includes <strong>all</strong> responses.</p>
-        <table class="widefat striped">
-            <thead><tr><th>Date</th><th>Rating</th><th>Answers</th></tr></thead>
-            <tbody>
-            <?php if ( $rows ) : foreach ( $rows as $r ) :
-                $data = json_decode( $r->response_data, true );
-                ?>
-                <tr>
-                    <td><?php echo esc_html( $r->submitted_at ); ?></td>
-                    <td><?php echo $r->overall_rating ? esc_html( $r->overall_rating ) . ' / 5' : '-'; ?></td>
-                    <td>
-                        <?php if ( is_array( $data ) ) : foreach ( $data as $q => $a ) : ?>
-                            <strong><?php echo esc_html( $q ); ?>:</strong> <?php echo esc_html( is_array( $a ) ? implode( ', ', $a ) : $a ); ?><br>
-                        <?php endforeach; endif; ?>
-                    </td>
-                </tr>
-            <?php endforeach; else : ?>
-                <tr><td colspan="3">No responses yet.</td></tr>
+
+        <div style="display: flex; gap: 10px; align-items: center; margin: 15px 0 10px 0; flex-wrap: wrap;">
+            <a href="<?php echo esc_url( $export_url ); ?>" class="button button-primary">⬇ Export All to CSV</a>
+
+            <?php if ( $total > 0 ) : ?>
+                <form method="post" style="margin:0;" onsubmit="return confirm('⚠️ WARNING: Are you sure you want to permanently delete ALL <?php echo (int) $total; ?> feedback responses? This action cannot be undone!');">
+                    <?php wp_nonce_field( 'sff_delete_all_action', 'sff_delete_all_nonce' ); ?>
+                    <input type="hidden" name="sff_delete_all_responses" value="1">
+                    <button type="submit" class="button" style="color: #b32d2e; border-color: #b32d2e; font-weight: 600;">🗑 Delete All Responses</button>
+                </form>
             <?php endif; ?>
-            </tbody>
-        </table>
+        </div>
+
+        <p class="description">Showing latest 200 below. The CSV export includes <strong>all</strong> responses.</p>
+
+        <form method="post" id="sff-responses-form" onsubmit="return sffConfirmBulkAction(this);">
+            <?php wp_nonce_field( 'sff_bulk_responses_action', 'sff_bulk_nonce' ); ?>
+
+            <div class="tablenav top" style="margin: 6px 0;">
+                <div class="alignleft actions bulkactions">
+                    <label for="bulk-action-selector-top" class="screen-reader-text">Select bulk action</label>
+                    <select name="sff_bulk_action" id="bulk-action-selector-top">
+                        <option value="-1">Bulk Actions</option>
+                        <option value="delete">Delete</option>
+                    </select>
+                    <input type="submit" class="button action" value="Apply">
+                </div>
+            </div>
+
+            <table class="widefat striped">
+                <thead>
+                    <tr>
+                        <td id="cb" class="manage-column column-cb check-column" style="width: 2.2em; padding: 8px 10px;">
+                            <input id="cb-select-all-top" type="checkbox" onclick="sffToggleAll(this);">
+                        </td>
+                        <th style="width: 160px;">Date</th>
+                        <th style="width: 100px;">Rating</th>
+                        <th>Answers</th>
+                        <th style="width: 100px; text-align: center;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php if ( $rows ) : foreach ( $rows as $r ) :
+                    $data = json_decode( $r->response_data, true );
+                    $delete_url = wp_nonce_url( admin_url( 'admin.php?page=sff-responses&delete_response=' . $r->id ), 'sff_delete_response_' . $r->id );
+                    ?>
+                    <tr>
+                        <th scope="row" class="check-column" style="padding: 8px 10px;">
+                            <input type="checkbox" name="response_ids[]" value="<?php echo (int) $r->id; ?>" class="sff-response-cb">
+                        </th>
+                        <td><?php echo esc_html( $r->submitted_at ); ?></td>
+                        <td><?php echo $r->overall_rating ? esc_html( $r->overall_rating ) . ' / 5' : '-'; ?></td>
+                        <td>
+                            <?php if ( is_array( $data ) ) : foreach ( $data as $q => $a ) : ?>
+                                <strong><?php echo esc_html( $q ); ?>:</strong> <?php echo esc_html( is_array( $a ) ? implode( ', ', $a ) : $a ); ?><br>
+                            <?php endforeach; endif; ?>
+                        </td>
+                        <td style="text-align: center; vertical-align: middle;">
+                            <a href="<?php echo esc_url( $delete_url ); ?>"
+                               onclick="return confirm('Are you sure you want to delete this response?');"
+                               class="button button-small"
+                               style="color: #b32d2e; border-color: #b32d2e;">Delete</a>
+                        </td>
+                    </tr>
+                <?php endforeach; else : ?>
+                    <tr><td colspan="5">No responses yet.</td></tr>
+                <?php endif; ?>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td class="manage-column column-cb check-column" style="width: 2.2em; padding: 8px 10px;">
+                            <input id="cb-select-all-bottom" type="checkbox" onclick="sffToggleAll(this);">
+                        </td>
+                        <th>Date</th>
+                        <th>Rating</th>
+                        <th>Answers</th>
+                        <th style="text-align: center;">Action</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </form>
     </div>
+
+    <script type="text/javascript">
+    function sffToggleAll(source) {
+        var checkboxes = document.querySelectorAll('.sff-response-cb');
+        for (var i = 0; i < checkboxes.length; i++) {
+            checkboxes[i].checked = source.checked;
+        }
+        var topCb = document.getElementById('cb-select-all-top');
+        var btmCb = document.getElementById('cb-select-all-bottom');
+        if (topCb) topCb.checked = source.checked;
+        if (btmCb) btmCb.checked = source.checked;
+    }
+
+    function sffConfirmBulkAction(form) {
+        var select = form.querySelector('select[name="sff_bulk_action"]');
+        if (select && select.value === 'delete') {
+            var checked = form.querySelectorAll('input[name="response_ids[]"]:checked');
+            if (checked.length === 0) {
+                alert('Please select at least one response to delete.');
+                return false;
+            }
+            return confirm('Are you sure you want to delete the selected ' + checked.length + ' response(s)?');
+        }
+        return true;
+    }
+    </script>
     <?php
 }
 
